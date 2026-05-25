@@ -1,0 +1,16 @@
+后端启动说明：
+
+1. 进入 backend 目录
+2. 安装依赖：
+   pip install -r requirements.txt
+3. 启动服务：
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+接口：
+- GET  /api/health
+- POST /api/detect
+- POST /api/compare
+
+说明：
+- /api/detect 使用 exp6 权重：runs/exp6_yolov8s_cbam_transfer/weights/best.pt
+- 当前前端后续可以把 mock 接口替换成 http://localhost:8000/api/detect

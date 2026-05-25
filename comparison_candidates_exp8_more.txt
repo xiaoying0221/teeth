@@ -1,0 +1,14 @@
+001. test_0187_(110) | GT=4 | exp8=2 | exp10=0 | delta=2 | score=4.400
+002. test_0048_caries_0_3639 | GT=4 | exp8=4 | exp10=2 | delta=2 | score=4.200
+003. test_0150_134 | GT=4 | exp8=5 | exp10=3 | delta=2 | score=2.100
+004. test_0137_385 | GT=1 | exp8=1 | exp10=0 | delta=1 | score=2.100
+005. test_0180_580 | GT=1 | exp8=1 | exp10=0 | delta=1 | score=2.100
+006. test_0331_580 | GT=1 | exp8=1 | exp10=0 | delta=1 | score=2.100
+007. test_0371_caries_0_3588 | GT=1 | exp8=1 | exp10=0 | delta=1 | score=2.100
+008. test_0160_caries_0_4890 | GT=2 | exp8=2 | exp10=1 | delta=1 | score=2.100
+009. test_0200_caries_0_4890 | GT=2 | exp8=2 | exp10=1 | delta=1 | score=2.100
+010. test_0120_caries_0_7 | GT=3 | exp8=3 | exp10=2 | delta=1 | score=2.100
+011. test_0296_caries_0_7 | GT=3 | exp8=3 | exp10=2 | delta=1 | score=2.100
+012. test_0336_caries_0_3906 | GT=3 | exp8=3 | exp10=2 | delta=1 | score=2.100
+013. test_0273_caries_0_304 | GT=4 | exp8=4 | exp10=3 | delta=1 | score=2.100
+014. test_0318_caries_0_304 | GT=4 | exp8=4 | exp10=3 | delta=1 | score=2.100

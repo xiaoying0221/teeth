@@ -1,0 +1,15 @@
+test_0258_caries_0_194
+  source: test_0258_caries_0_194.jpg
+  collage: test_0258_caries_0_194_compare.jpg
+test_0172_783
+  source: test_0172_783.jpg
+  collage: test_0172_783_compare.jpg
+test_0265_423
+  source: test_0265_423.jpg
+  collage: test_0265_423_compare.jpg
+test_0090_703
+  source: test_0090_703.jpg
+  collage: test_0090_703_compare.jpg
+test_0154_463
+  source: test_0154_463.jpg
+  collage: test_0154_463_compare.jpg
