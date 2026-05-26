@@ -428,6 +428,7 @@ input {
   position: absolute;
   border-radius: 16px;
   border: 2px solid;
+  cursor: pointer;
 }
 
 .box-original {
@@ -445,6 +446,10 @@ input {
   background: rgba(255, 125, 146, 0.04);
 }
 
+.box-original.selected {
+  box-shadow: 0 0 0 3px rgba(47, 143, 216, 0.18);
+}
+
 .box-edited {
   border-color: var(--green);
   background: rgba(47, 186, 166, 0.12);
@@ -453,6 +458,32 @@ input {
 
 .box-edited.active {
   box-shadow: 0 0 0 3px rgba(47, 186, 166, 0.18);
+}
+
+.box-action-menu {
+  position: absolute;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(67, 149, 214, 0.18);
+  box-shadow: var(--shadow-soft);
+}
+
+.box-action-menu button {
+  border: none;
+  border-radius: 10px;
+  padding: 7px 12px;
+  color: #fff;
+  background: var(--primary);
+  cursor: pointer;
+}
+
+.box-action-menu button.danger {
+  background: var(--rose);
 }
 
 .box-label {
