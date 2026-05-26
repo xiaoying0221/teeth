@@ -45,6 +45,7 @@ class CompareRequest(BaseModel):
     edited_box: BoxPayload
     detection_id: Optional[int] = None
     box_index: Optional[int] = 0
+    is_deleted: bool = False
 
 
 def calc_compare(original: BoxPayload, edited: BoxPayload):
@@ -136,6 +137,7 @@ def correction_to_dict(record: Optional[CorrectionRecord]):
         "iou": record.iou,
         "difference_ratio": record.difference_ratio,
         "box_index": getattr(record, "box_index", 0),
+        "is_deleted": bool(getattr(record, "is_deleted", 0)),
         "corrected_time": record.corrected_time.isoformat(),
     }
 
@@ -259,6 +261,7 @@ def compare(payload: CompareRequest, db: Session = Depends(get_db)):
         correction = CorrectionRecord(
             detection_id=payload.detection_id,
             box_index=payload.box_index or 0,
+            is_deleted=1 if payload.is_deleted else 0,
             x=round(payload.edited_box.x, 2),
             y=round(payload.edited_box.y, 2),
             width=round(payload.edited_box.width, 2),

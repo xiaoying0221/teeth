@@ -18,6 +18,8 @@ def init_db():
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(corrections)"))}
         if "box_index" not in cols:
             conn.execute(text("ALTER TABLE corrections ADD COLUMN box_index INTEGER NOT NULL DEFAULT 0"))
+        if "is_deleted" not in cols:
+            conn.execute(text("ALTER TABLE corrections ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0"))
 
 
 def get_db():

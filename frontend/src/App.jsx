@@ -86,6 +86,24 @@ export default function App() {
   function openRecord(record) {
     const detections = record.detections || (record.detection ? [record.detection] : [])
     const corrections = record.corrections || []
+    const correctionMap = Object.fromEntries(corrections.map((item) => [item.box_index ?? 0, item]))
+    const maxIndex = Math.max(detections.length - 1, ...corrections.map((item) => item.box_index ?? 0))
+    const original = []
+    const edited = []
+    const confidences = {}
+    const detectionIdsNext = []
+
+    for (let idx = 0; idx <= maxIndex; idx += 1) {
+      const detection = detections[idx]
+      const correction = correctionMap[idx]
+      const baseBox = detection?.bbox || correction?.bbox
+      if (!baseBox) continue
+      original.push({ ...baseBox })
+      edited.push({ ...(correction?.bbox || baseBox) })
+      confidences[idx] = detection?.confidence ?? null
+      detectionIdsNext.push(detection?.id ?? correction?.detection_id ?? null)
+    }
+
     setImage({
       id: record.id,
       url: record.url || record.image_url || '',
@@ -93,13 +111,13 @@ export default function App() {
       height: record.height,
       name: record.filename,
     })
-    setOriginalBoxes(detections.map((det) => det.bbox))
-    setEditedBoxes(detections.map((det, idx) => corrections.find((item) => item.box_index === idx)?.bbox || det.bbox))
+    setOriginalBoxes(original)
+    setEditedBoxes(edited)
     setActiveBoxIndex(0)
-    setDeletedBoxes([])
-    setConfidenceMap(Object.fromEntries(detections.map((det, idx) => [idx, det.confidence ?? null])))
-    setDetectionIds(detections.map((det) => det.id ?? null))
-    setMetricsMap(Object.fromEntries(corrections.map((item) => [item.box_index ?? 0, item])))
+    setDeletedBoxes(corrections.filter((item) => item.is_deleted).map((item) => item.box_index ?? 0))
+    setConfidenceMap(confidences)
+    setDetectionIds(detectionIdsNext)
+    setMetricsMap(correctionMap)
     setStatus('已打开历史检测记录')
   }
 
@@ -193,7 +211,13 @@ export default function App() {
   async function saveAllCorrections() {
     if (!originalBoxes.length || !editedBoxes.length) return
     try {
-      const results = await Promise.all(editedBoxes.map((box, idx) => (deletedBoxes.includes(idx) ? Promise.resolve(null) : compareBoxes(originalBoxes[idx], box, detectionIds[idx], idx))))
+      const results = await Promise.all(
+        editedBoxes.map((box, idx) => {
+          const isDeleted = deletedBoxes.includes(idx)
+          const payloadBox = isDeleted ? originalBoxes[idx] : box
+          return compareBoxes(originalBoxes[idx], payloadBox, detectionIds[idx], idx, isDeleted)
+        }),
+      )
       setMetricsMap((prev) => {
         const next = { ...prev }
         results.forEach((item, idx) => {

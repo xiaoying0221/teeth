@@ -44,6 +44,7 @@ class CorrectionRecord(Base):
     id = Column(Integer, primary_key=True, index=True)
     detection_id = Column(Integer, ForeignKey("detections.id"), nullable=False, index=True)
     box_index = Column(Integer, default=0, nullable=False)
+    is_deleted = Column(Integer, default=0, nullable=False)
     x = Column(Float, nullable=False)
     y = Column(Float, nullable=False)
     width = Column(Float, nullable=False)

@@ -15,10 +15,11 @@ export async function detectImage(file) {
   return response.json()
 }
 
-export async function compareBoxes(originalBox, editedBox, detectionId = null, boxIndex = null) {
+export async function compareBoxes(originalBox, editedBox, detectionId = null, boxIndex = null, isDeleted = false) {
   const payload = {
     original_box: originalBox,
     edited_box: editedBox,
+    is_deleted: isDeleted,
   }
   if (detectionId != null) payload.detection_id = detectionId
   if (boxIndex != null) payload.box_index = boxIndex
