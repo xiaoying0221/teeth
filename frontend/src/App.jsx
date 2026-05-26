@@ -6,29 +6,28 @@ const clamp = (v, min, max) => Math.min(Math.max(v, min), max)
 export default function App() {
   const stageRef = useRef(null)
   const dragRef = useRef(null)
-  const timerRef = useRef(null)
 
   const [status, setStatus] = useState('等待上传图片')
   const [image, setImage] = useState(null)
   const [originalBoxes, setOriginalBoxes] = useState([])
   const [editedBoxes, setEditedBoxes] = useState([])
-  const [activeBoxIndex, setActiveBoxIndex] = useState(0)
-  const [metricsMap, setMetricsMap] = useState({})
-  const [confidenceMap, setConfidenceMap] = useState({})
-  const [isDetecting, setIsDetecting] = useState(false)
-  const [detectionIds, setDetectionIds] = useState([])
-  const [addedBoxIds, setAddedBoxIds] = useState([])
+  const [showEditedForModel, setShowEditedForModel] = useState({})
   const [boxTypes, setBoxTypes] = useState([])
   const [deletedBoxes, setDeletedBoxes] = useState([])
+  const [activeBoxIndex, setActiveBoxIndex] = useState(0)
+  const [boxMenuIndex, setBoxMenuIndex] = useState(null)
+
+  const [confidenceMap, setConfidenceMap] = useState({})
+  const [metricsMap, setMetricsMap] = useState({})
+  const [detectionIds, setDetectionIds] = useState([])
+  const [addedBoxIds, setAddedBoxIds] = useState([])
+  const [isDetecting, setIsDetecting] = useState(false)
+
   const [records, setRecords] = useState([])
   const [historyStatus, setHistoryStatus] = useState('暂无历史记录')
 
   useEffect(() => {
     loadRecords()
-  }, [])
-
-  useEffect(() => {
-    return () => timerRef.current && clearTimeout(timerRef.current)
   }, [])
 
   async function loadRecords(showStatus = true) {
@@ -53,6 +52,8 @@ export default function App() {
     try {
       const result = await detectImage(file)
       const detections = result.detections || []
+      const modelBoxes = detections.map((det) => ({ ...det.bbox }))
+
       setImage({
         id: result.image.id,
         url: result.image.url || localUrl,
@@ -60,16 +61,20 @@ export default function App() {
         height: result.image.height,
         name: result.image.name,
       })
-      setOriginalBoxes(detections.map((det) => ({ ...det.bbox })))
-      setEditedBoxes(detections.map((det) => ({ ...det.bbox })))
-      setActiveBoxIndex(0)
+      setOriginalBoxes(modelBoxes)
+      setEditedBoxes(modelBoxes.map((b) => ({ ...b })))
+      setShowEditedForModel({})
+      setBoxTypes(modelBoxes.map(() => 'model'))
       setDeletedBoxes([])
-      setMetricsMap({})
+      setActiveBoxIndex(0)
+      setBoxMenuIndex(null)
+
       setConfidenceMap(Object.fromEntries(detections.map((det, idx) => [idx, det.confidence ?? null])))
+      setMetricsMap({})
       setDetectionIds(detections.map((det) => det.id ?? null))
       setAddedBoxIds(detections.map(() => null))
-      setBoxTypes(detections.map(() => 'model'))
-      setStatus(detections.length ? `识别完成，共检测到 ${detections.length} 个区域，可在结果框内继续修正` : '未检测到目标区域，图片已保存')
+
+      setStatus(detections.length ? `识别完成，共检测到 ${detections.length} 个模型框` : '未检测到目标区域，图片已保存')
       loadRecords(false)
     } catch (err) {
       console.error(err)
@@ -77,13 +82,15 @@ export default function App() {
       setImage(null)
       setOriginalBoxes([])
       setEditedBoxes([])
-      setActiveBoxIndex(0)
+      setShowEditedForModel({})
+      setBoxTypes([])
       setDeletedBoxes([])
-      setMetricsMap({})
+      setActiveBoxIndex(0)
+      setBoxMenuIndex(null)
       setConfidenceMap({})
+      setMetricsMap({})
       setDetectionIds([])
       setAddedBoxIds([])
-      setBoxTypes([])
     } finally {
       setIsDetecting(false)
     }
@@ -94,10 +101,19 @@ export default function App() {
     const corrections = record.corrections || []
     const addedBoxes = record.added_boxes || []
     const deletedIndexes = record.deleted_box_indexes || []
-    const modelOriginal = detections.map((det) => det.bbox)
-    const modelEdited = detections.map((det, idx) => corrections.find((item) => item.box_index === idx)?.bbox || det.bbox)
-    const mergedOriginal = [...modelOriginal]
-    const mergedEdited = [...modelEdited, ...addedBoxes.map((item) => item.bbox)]
+
+    const modelOriginal = detections.map((det) => ({ ...det.bbox }))
+    const modelEdited = modelOriginal.map((box, idx) => {
+      const correction = corrections.find((item) => item.box_index === idx)
+      return correction?.bbox ? { ...correction.bbox } : { ...box }
+    })
+
+    const mergedEdited = [...modelEdited, ...addedBoxes.map((item) => ({ ...item.bbox }))]
+
+    const showMap = {}
+    corrections.forEach((item) => {
+      if (typeof item.box_index === 'number') showMap[item.box_index] = true
+    })
 
     setImage({
       id: record.id,
@@ -106,14 +122,17 @@ export default function App() {
       height: record.height,
       name: record.filename,
     })
-    setOriginalBoxes(mergedOriginal)
+    setOriginalBoxes(modelOriginal)
     setEditedBoxes(mergedEdited)
-    setActiveBoxIndex(0)
+    setShowEditedForModel(showMap)
+    setBoxTypes([...modelOriginal.map(() => 'model'), ...addedBoxes.map(() => 'added')])
     setDeletedBoxes(deletedIndexes)
+    setActiveBoxIndex(0)
+    setBoxMenuIndex(null)
+
     setConfidenceMap(Object.fromEntries(modelOriginal.map((_, idx) => [idx, detections[idx]?.confidence ?? null])))
     setDetectionIds([...detections.map((det) => det.id ?? null), ...addedBoxes.map(() => null)])
     setAddedBoxIds([...detections.map(() => null), ...addedBoxes.map((item) => item.id ?? null)])
-    setBoxTypes([...modelOriginal.map(() => 'model'), ...addedBoxes.map(() => 'added')])
     setMetricsMap(Object.fromEntries(corrections.map((item) => [item.box_index ?? 0, item])))
     setStatus('已打开历史检测记录')
   }
@@ -124,14 +143,21 @@ export default function App() {
     return { sx: rect.width / image.width, sy: rect.height / image.height }
   }
 
+  function canDrag(index) {
+    if (deletedBoxes.includes(index)) return false
+    if (boxTypes[index] === 'added') return true
+    return !!showEditedForModel[index]
+  }
+
   function startDrag(mode, e, index) {
     const box = editedBoxes[index]
-    if (!box || !image || deletedBoxes.includes(index)) return
+    if (!box || !image || !canDrag(index)) return
     e.preventDefault()
     e.stopPropagation()
     setActiveBoxIndex(index)
     const scale = getScale()
     if (!scale) return
+
     dragRef.current = {
       mode,
       boxIndex: index,
@@ -140,6 +166,7 @@ export default function App() {
       box: { ...box },
       ...scale,
     }
+
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', stopDrag)
   }
@@ -167,7 +194,7 @@ export default function App() {
     }
 
     setEditedBoxes((prev) => prev.map((item, idx) => (idx === s.boxIndex ? next : item)))
-    setStatus('已手动调整当前区域，修正结果将自动保存')
+    setStatus('已手动调整当前修正框，可点击“保存全部修正”')
   }
 
   function stopDrag() {
@@ -176,59 +203,79 @@ export default function App() {
     window.removeEventListener('pointerup', stopDrag)
   }
 
+  function onModelBoxClick(idx, e) {
+    e.preventDefault()
+    e.stopPropagation()
+    setActiveBoxIndex(idx)
+    setBoxMenuIndex((prev) => (prev === idx ? null : idx))
+  }
+
+  function chooseModify() {
+    if (boxMenuIndex == null) return
+    const idx = boxMenuIndex
+    setShowEditedForModel((prev) => ({ ...prev, [idx]: true }))
+    setDeletedBoxes((prev) => prev.filter((x) => x !== idx))
+    setActiveBoxIndex(idx)
+    setBoxMenuIndex(null)
+    setStatus(`模型框 ${idx + 1} 已进入修改模式，可拖动修正框`)
+  }
+
+  function chooseDelete() {
+    if (boxMenuIndex == null) return
+    const idx = boxMenuIndex
+    setDeletedBoxes((prev) => (prev.includes(idx) ? prev : [...prev, idx]))
+    setShowEditedForModel((prev) => {
+      const next = { ...prev }
+      delete next[idx]
+      return next
+    })
+    setBoxMenuIndex(null)
+    setStatus(`模型框 ${idx + 1} 已标记删除（虚线显示）`)
+  }
+
   async function addBox() {
     if (!image) return
-    const base = originalBoxes[activeBoxIndex] || editedBoxes[activeBoxIndex] || { x: image.width * 0.2, y: image.height * 0.2, width: image.width * 0.24, height: image.height * 0.24 }
+    const base = editedBoxes[activeBoxIndex] || originalBoxes[activeBoxIndex] || { x: image.width * 0.2, y: image.height * 0.2, width: image.width * 0.24, height: image.height * 0.24 }
     const next = getNewBox(base, image)
 
     try {
-      const created = await createAddedBox(image.id, next, editedBoxes.length)
-      setOriginalBoxes((prev) => [...prev, null])
+      const created = await createAddedBox(image.id, next, getNextAddedIndex(boxTypes))
       setEditedBoxes((prev) => {
         const nextList = [...prev, next]
         setActiveBoxIndex(nextList.length - 1)
         return nextList
       })
-      setConfidenceMap((prev) => ({ ...prev, [editedBoxes.length]: null }))
+      setBoxTypes((prev) => [...prev, 'added'])
       setDetectionIds((prev) => [...prev, null])
       setAddedBoxIds((prev) => [...prev, created?.added_box?.id ?? null])
-      setBoxTypes((prev) => [...prev, 'added'])
-      setStatus('已新增修正框并单独保存，可继续拖动调整')
+      setStatus('已新增修正框并保存，可继续拖动')
       loadRecords(false)
     } catch (err) {
       console.error(err)
-      setStatus(`新增框失败：${err.message}`)
+      setStatus(`新增修正框失败：${err.message}`)
     }
-  }
-
-  function removeBox() {
-    if (!originalBoxes[activeBoxIndex]) return
-    setDeletedBoxes((prev) => (prev.includes(activeBoxIndex) ? prev : [...prev, activeBoxIndex]))
-    setStatus('已删除当前模型框，当前框已变为虚线')
-  }
-
-  function resetBox() {
-    if (!originalBoxes[activeBoxIndex]) return
-    setDeletedBoxes((prev) => prev.filter((idx) => idx !== activeBoxIndex))
-    setEditedBoxes((prev) => prev.map((item, idx) => (idx === activeBoxIndex ? { ...originalBoxes[activeBoxIndex] } : item)))
-    setStatus('已重置当前框为模型原始框')
   }
 
   async function saveAllCorrections() {
     if (!editedBoxes.length) return
     try {
-      const results = await Promise.all(editedBoxes.map((box, idx) => {
-        if (deletedBoxes.includes(idx)) return Promise.resolve(null)
-        if (boxTypes[idx] !== 'model') return Promise.resolve(null)
-        if (!originalBoxes[idx]) return Promise.resolve(null)
-        return compareBoxes(originalBoxes[idx], box, detectionIds[idx], idx)
-      }))
+      const modelSaves = await Promise.all(
+        editedBoxes.map((box, idx) => {
+          if (boxTypes[idx] !== 'model') return Promise.resolve(null)
+          if (deletedBoxes.includes(idx)) return Promise.resolve(null)
+          if (!showEditedForModel[idx]) return Promise.resolve(null)
+          if (!originalBoxes[idx]) return Promise.resolve(null)
+          return compareBoxes(originalBoxes[idx], box, detectionIds[idx], idx)
+        })
+      )
 
-      const addedUpdates = await Promise.all(editedBoxes.map((box, idx) => {
-        if (boxTypes[idx] !== 'added') return Promise.resolve(null)
-        if (!addedBoxIds[idx]) return Promise.resolve(null)
-        return updateAddedBox(addedBoxIds[idx], box)
-      }))
+      const addedUpdates = await Promise.all(
+        editedBoxes.map((box, idx) => {
+          if (boxTypes[idx] !== 'added') return Promise.resolve(null)
+          if (!addedBoxIds[idx]) return Promise.resolve(null)
+          return updateAddedBox(addedBoxIds[idx], box)
+        })
+      )
 
       const deletedSaves = await Promise.all(
         deletedBoxes.map((idx) => {
@@ -240,14 +287,16 @@ export default function App() {
 
       setMetricsMap((prev) => {
         const next = { ...prev }
-        results.forEach((item, idx) => {
+        modelSaves.forEach((item, idx) => {
           if (item) next[idx] = item
         })
         return next
       })
-      setStatus('全部修正已保存')
+
       if (addedUpdates.some(Boolean) || deletedSaves.some(Boolean)) {
-        setStatus('全部修正已保存（包含新增修正框位置更新/删除模型框）')
+        setStatus('全部修正已保存（包含新增修正框与删除标记）')
+      } else {
+        setStatus('全部修正已保存')
       }
       loadRecords(false)
     } catch (err) {
@@ -275,26 +324,62 @@ export default function App() {
           <label className="upload-card">
             <input type="file" accept="image/png,image/jpeg,image/jpg" onChange={handleUpload} />
             <span>点击上传口腔图片</span>
-            <small>支持 JPG / PNG，识别和修正结果会自动保存</small>
+            <small>{status}</small>
           </label>
+
           <div className="button-row button-row-stack">
             <button onClick={addBox} disabled={!image}>新增修正框</button>
-            <button onClick={removeBox} disabled={!originalBoxes.length || boxTypes[activeBoxIndex] !== 'model'}>删除当前模型框</button>
-            <button onClick={resetBox} disabled={!originalBoxes.length}>重置当前框</button>
+            <button onClick={saveAllCorrections} disabled={!image}>保存全部修正</button>
           </div>
+
           <HistoryPanel records={records} status={historyStatus} onOpen={openRecord} onRefresh={() => loadRecords()} />
         </section>
 
         <section className="panel panel-canvas">
           <div className="panel-title-row">
             <h2>识别与交互标注区</h2>
-            <span className="legend"><i className="legend-original" />模型原始框<i className="legend-edited" />人工修正框<i className="legend-added" />新增修正框</span>
+            <span className="legend"><i className="legend-original" />模型框<i className="legend-edited" />模型对应修正框<i className="legend-added" />新增修正框</span>
           </div>
-          <div className="canvas-stage" ref={stageRef} style={stageStyle}>
+          <div className="canvas-stage" ref={stageRef} style={stageStyle} onClick={() => setBoxMenuIndex(null)}>
             {image ? <img src={image.url} alt={image.name} className="preview-image" /> : <div className="empty-stage">上传图片后将在这里显示识别结果</div>}
             {(isDetecting || !image) && <div className="stage-message"><div className="stage-message-card">{isDetecting ? '图片上传成功，正在调用后端识别...' : '上传图片后将在这里显示识别结果'}</div></div>}
-            {image && originalBoxes.map((box, idx) => box ? <Box key={idx} box={box} image={image} className={`box-original ${deletedBoxes.includes(idx) ? 'deleted' : ''}`} label={`模型框 ${idx + 1}`} /> : null)}
-            {image && editedBoxes.map((box, idx) => box ? <EditBox key={idx} box={box} image={image} onStart={(mode, e) => startDrag(mode, e, idx)} active={idx === activeBoxIndex} index={idx} deleted={deletedBoxes.includes(idx)} boxType={boxTypes[idx]} /> : null)}
+
+            {image && originalBoxes.map((box, idx) => box ? (
+              <Box
+                key={`model-${idx}`}
+                box={box}
+                image={image}
+                className={`box-original ${deletedBoxes.includes(idx) ? 'deleted' : ''} ${activeBoxIndex === idx ? 'active' : ''}`}
+                label={`模型框 ${idx + 1}`}
+                onClick={(e) => onModelBoxClick(idx, e)}
+              />
+            ) : null)}
+
+            {image && editedBoxes.map((box, idx) => {
+              if (!box) return null
+              if (boxTypes[idx] === 'model' && !showEditedForModel[idx]) return null
+              return (
+                <EditBox
+                  key={`edit-${idx}`}
+                  box={box}
+                  image={image}
+                  onStart={(mode, e) => startDrag(mode, e, idx)}
+                  active={idx === activeBoxIndex}
+                  index={idx}
+                  deleted={deletedBoxes.includes(idx)}
+                  boxType={boxTypes[idx]}
+                  displayLabel={boxTypes[idx] === 'added' ? `新增修正框 ${getAddedDisplayIndex(boxTypes, idx)}` : `修正框 ${idx + 1}`}
+                />
+              )
+            })}
+
+            {boxMenuIndex != null && (
+              <div className="box-action-menu" onClick={(e) => e.stopPropagation()}>
+                <button type="button" onClick={() => setBoxMenuIndex(null)}>取消</button>
+                <button type="button" onClick={chooseModify}>修改</button>
+                <button type="button" onClick={chooseDelete}>删除</button>
+              </div>
+            )}
           </div>
         </section>
 
@@ -302,14 +387,25 @@ export default function App() {
           <h2>数值专区</h2>
           <MetricSection title="模型框" box={originalBoxes[activeBoxIndex]} />
           <MetricSection title={boxTypes[activeBoxIndex] === 'added' ? '新增修正框' : '修正框'} box={editedBoxes[activeBoxIndex]} />
-          <div className="correction-list">{editedBoxes.map((box, idx) => <button key={idx} type="button" className={`correction-item ${idx === activeBoxIndex ? 'active' : ''}`} onClick={() => setActiveBoxIndex(idx)}><strong>{boxTypes[idx] === 'added' ? `新增修正框 ${idx + 1}` : (deletedBoxes.includes(idx) ? `已删除模型框 ${idx + 1}` : `模型框 ${idx + 1}`)}</strong><span>{box ? `x:${box.x.toFixed(0)} y:${box.y.toFixed(0)} w:${box.width.toFixed(0)} h:${box.height.toFixed(0)}` : '未修正'}</span><small>{boxTypes[idx] === 'added' ? '新增修正框已独立保存' : (metricsMap[idx] ? `IoU ${Number(metricsMap[idx].iou).toFixed(3)}` : '未保存')}</small></button>)}</div>
-          <div className="box-tabs">{editedBoxes.map((_, idx) => <button key={idx} className={idx === activeBoxIndex ? 'active' : ''} type="button" onClick={() => setActiveBoxIndex(idx)}>框 {idx + 1}</button>)}<button type="button" className="save-all" onClick={() => saveAllCorrections()}>保存全部修正</button></div>
-          <div className="stats-grid">
-            <StatCard title="IoU" value={metricsMap[activeBoxIndex] ? Number(metricsMap[activeBoxIndex].iou).toFixed(4) : '--'} accent="cyan" />
-            <StatCard title="差异比例" value={metricsMap[activeBoxIndex] ? `${(Number(metricsMap[activeBoxIndex].difference_ratio) * 100).toFixed(2)}%` : '--'} accent="amber" />
-            <StatCard title="模型框面积" value={metricsMap[activeBoxIndex] ? Number(metricsMap[activeBoxIndex].original_area).toFixed(0) : '--'} accent="pink" />
-            <StatCard title="修正框面积" value={metricsMap[activeBoxIndex] ? Number(metricsMap[activeBoxIndex].edited_area).toFixed(0) : '--'} accent="green" />
+          <div className="correction-list">
+            {editedBoxes.map((box, idx) => {
+              const isAdded = boxTypes[idx] === 'added'
+              const title = isAdded
+                ? `新增修正框 ${getAddedDisplayIndex(boxTypes, idx)}`
+                : (deletedBoxes.includes(idx)
+                  ? `已删除模型框 ${idx + 1}`
+                  : (showEditedForModel[idx] ? `修正框 ${idx + 1}` : `模型框 ${idx + 1}`))
+              const sub = box ? `x:${box.x.toFixed(0)} y:${box.y.toFixed(0)} w:${box.width.toFixed(0)} h:${box.height.toFixed(0)}` : '未修正'
+              return (
+                <button key={idx} type="button" className={`correction-item ${idx === activeBoxIndex ? 'active' : ''}`} onClick={() => setActiveBoxIndex(idx)}>
+                  <strong>{title}</strong>
+                  <span>{sub}</span>
+                  <small>{isAdded ? '新增修正框索引从1开始' : `模型索引 ${idx}`}</small>
+                </button>
+              )
+            })}
           </div>
+
           <div className="metric-section">
             <h3>模型输出信息</h3>
             <div className="metric-grid">
@@ -319,34 +415,74 @@ export default function App() {
               <MetricItem label="record" value={image?.id ? `#${image.id}` : '--'} />
             </div>
           </div>
+
+          <div className="stats-grid">
+            <StatCard title="IoU" value={metricsMap[activeBoxIndex] ? Number(metricsMap[activeBoxIndex].iou).toFixed(4) : '--'} accent="cyan" />
+            <StatCard title="差异比例" value={metricsMap[activeBoxIndex] ? `${(Number(metricsMap[activeBoxIndex].difference_ratio) * 100).toFixed(2)}%` : '--'} accent="amber" />
+            <StatCard title="模型框面积" value={metricsMap[activeBoxIndex] ? Number(metricsMap[activeBoxIndex].original_area).toFixed(0) : '--'} accent="pink" />
+            <StatCard title="修正框面积" value={metricsMap[activeBoxIndex] ? Number(metricsMap[activeBoxIndex].edited_area).toFixed(0) : '--'} accent="green" />
+          </div>
         </section>
       </main>
     </div>
   )
 }
 
+function getAddedDisplayIndex(boxTypes, idx) {
+  if (boxTypes[idx] !== 'added') return idx + 1
+  let count = 0
+  for (let i = 0; i <= idx; i += 1) {
+    if (boxTypes[i] === 'added') count += 1
+  }
+  return count
+}
+
+function getNextAddedIndex(boxTypes) {
+  return boxTypes.filter((item) => item === 'added').length + 1
+}
+
 function HistoryPanel({ records, status, onOpen, onRefresh }) {
-  return <div className="history-panel"><div className="history-head"><h3>历史记录</h3><button type="button" onClick={onRefresh}>刷新</button></div><p>{status}</p><div className="history-list">{records.slice(0, 8).map((record) => <button className="history-item" key={record.id} type="button" onClick={() => onOpen(record)}><strong>#{record.id} {record.filename}</strong><span>{new Date(record.upload_time).toLocaleString()}</span><em>{record.detections?.length ? `检测到 ${record.detections.length} 个区域` : record.detection ? '检测到 1 个区域' : '未检测到目标'}</em><small>{record.corrections?.length ? `已保存 ${record.corrections.length} 个修正` : '暂无修正记录'}</small>{record.url ? <small>图片已保存</small> : <small>图片已丢失/未保存</small>}</button>)}</div></div>
+  return (
+    <div className="history-panel">
+      <div className="history-head"><h3>历史记录</h3><button type="button" onClick={onRefresh}>刷新</button></div>
+      <p>{status}</p>
+      <div className="history-list">
+        {records.slice(0, 8).map((record) => {
+          const modelCount = record.detections?.length || (record.detection ? 1 : 0)
+          const correctedCount = record.corrections?.length || 0
+          const addedCount = record.added_boxes?.length || 0
+          return (
+            <button className="history-item" key={record.id} type="button" onClick={() => onOpen(record)}>
+              <strong>#{record.id} {record.filename}</strong>
+              <span>{new Date(record.upload_time).toLocaleString()}</span>
+              <em>模型框: {modelCount} / 模型对应修正框: {correctedCount} / 新增修正框: {addedCount}</em>
+              {record.url ? <small>图片已保存</small> : <small>图片已丢失/未保存</small>}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
-function Box({ box, image, className, label }) {
+function Box({ box, image, className, label, onClick }) {
   const style = {
     left: `${(box.x / image.width) * 100}%`,
     top: `${(box.y / image.height) * 100}%`,
     width: `${(box.width / image.width) * 100}%`,
     height: `${(box.height / image.height) * 100}%`,
   }
-  return <div className={`box-overlay ${className}`} style={style}><span className="box-label">{label}</span></div>
+  return <div className={`box-overlay ${className}`} style={style} onClick={onClick}><span className="box-label">{label}</span></div>
 }
 
-function EditBox({ box, image, onStart, active, index, deleted, boxType }) {
+function EditBox({ box, image, onStart, active, deleted, boxType, displayLabel }) {
   const style = {
     left: `${(box.x / image.width) * 100}%`,
     top: `${(box.y / image.height) * 100}%`,
     width: `${(box.width / image.width) * 100}%`,
     height: `${(box.height / image.height) * 100}%`,
   }
-  return <div className={`box-overlay box-edited ${boxType === 'added' ? 'box-added' : ''} ${active ? 'active' : ''} ${deleted ? 'deleted' : ''}`} style={style} onPointerDown={(e) => onStart('move', e)}><span className="box-label">{boxType === 'added' ? `新增修正框 ${index + 1}` : `修正框 ${index + 1}`}</span><div className="resize-handle handle-se" style={{ width: 12, height: 12 }} onPointerDown={(e) => onStart('se', e)} /><div className="resize-handle handle-nw" style={{ width: 12, height: 12 }} onPointerDown={(e) => onStart('nw', e)} /></div>
+  return <div className={`box-overlay box-edited ${boxType === 'added' ? 'box-added' : ''} ${active ? 'active' : ''} ${deleted ? 'deleted' : ''}`} style={style} onPointerDown={(e) => onStart('move', e)}><span className="box-label">{displayLabel}</span><div className="resize-handle handle-se" style={{ width: 12, height: 12 }} onPointerDown={(e) => onStart('se', e)} /><div className="resize-handle handle-nw" style={{ width: 12, height: 12 }} onPointerDown={(e) => onStart('nw', e)} /></div>
 }
 
 function MetricSection({ title, box }) {
@@ -365,7 +501,5 @@ function getNewBox(base, image) {
   }
 }
 
-
 function MetricItem({ label, value }) { return <div className="metric-item"><span>{label}</span><strong>{value}</strong></div> }
 function StatCard({ title, value, accent }) { return <div className={`stat-card ${accent}`}><span>{title}</span><strong>{value}</strong></div> }
-

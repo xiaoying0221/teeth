@@ -428,6 +428,29 @@ input {
   color: var(--primary-deep);
 }
 
+.box-action-menu {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  display: flex;
+  gap: 8px;
+  z-index: 4;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(67, 149, 214, 0.16);
+  box-shadow: var(--shadow-soft);
+}
+
+.box-action-menu button {
+  border: 1px solid rgba(47, 143, 216, 0.2);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #fff;
+  color: var(--primary-deep);
+  cursor: pointer;
+}
+
 .box-overlay {
   position: absolute;
   border-radius: 16px;
@@ -437,6 +460,11 @@ input {
 .box-original {
   border-color: var(--rose);
   background: rgba(255, 125, 146, 0.1);
+  cursor: pointer;
+}
+
+.box-original.active {
+  box-shadow: 0 0 0 3px rgba(255, 125, 146, 0.22);
 }
 
 .box-original.deleted,
