@@ -57,3 +57,26 @@ class CorrectionRecord(Base):
     corrected_time = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     detection = relationship("DetectionRecord", back_populates="corrections")
+
+
+class DeletedBoxRecord(Base):
+    __tablename__ = "deleted_boxes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(Integer, ForeignKey("images.id"), nullable=False, index=True)
+    detection_id = Column(Integer, ForeignKey("detections.id"), nullable=False, index=True)
+    box_index = Column(Integer, default=0, nullable=False)
+    deleted_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AddedBoxRecord(Base):
+    __tablename__ = "added_boxes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(Integer, ForeignKey("images.id"), nullable=False, index=True)
+    box_index = Column(Integer, default=0, nullable=False)
+    x = Column(Float, nullable=False)
+    y = Column(Float, nullable=False)
+    width = Column(Float, nullable=False)
+    height = Column(Float, nullable=False)
+    created_time = Column(DateTime, default=datetime.utcnow, nullable=False)

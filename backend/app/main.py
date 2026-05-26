@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from ultralytics import YOLO
 
 from .database import get_db, init_db
-from .models import CorrectionRecord, DetectionRecord, ImageRecord
+from .models import AddedBoxRecord, CorrectionRecord, DeletedBoxRecord, DetectionRecord, ImageRecord
 
 BEST_PT = Path(r"d:\文档\毕业设计\teeth\runs\exp1_yolov8n\weights\best.pt")
 MODEL_NAME = "exp6_yolov8s_cbam_transfer"
@@ -47,6 +47,22 @@ class CompareRequest(BaseModel):
     box_index: Optional[int] = 0
 
 
+class AddedBoxCreateRequest(BaseModel):
+    image_id: int
+    box_index: Optional[int] = 0
+    box: BoxPayload
+
+
+class AddedBoxUpdateRequest(BaseModel):
+    box: BoxPayload
+
+
+class DeleteBoxRequest(BaseModel):
+    image_id: int
+    detection_id: int
+    box_index: int
+
+
 def calc_compare(original: BoxPayload, edited: BoxPayload):
     area1 = max(0.0, original.width) * max(0.0, original.height)
     area2 = max(0.0, edited.width) * max(0.0, edited.height)
@@ -73,7 +89,7 @@ def calc_compare(original: BoxPayload, edited: BoxPayload):
     }
 
 
-def image_to_dict(record: ImageRecord):
+def image_to_dict(record: ImageRecord, added_boxes=None, deleted_box_indexes=None):
     detections = list(record.detections or [])
     all_corrections = []
     for det in detections:
@@ -93,6 +109,8 @@ def image_to_dict(record: ImageRecord):
         "detections": [detection_to_dict(item) for item in detections],
         "detection": detection_to_dict(first_detection) if first_detection else None,
         "corrections": [correction_to_dict(item) for item in all_corrections],
+        "added_boxes": [added_box_to_dict(item) for item in (added_boxes or [])],
+        "deleted_box_indexes": sorted(list(set(deleted_box_indexes or []))),
         "latest_correction": correction_to_dict(all_corrections[-1]) if all_corrections else None,
     }
 
@@ -137,6 +155,23 @@ def correction_to_dict(record: Optional[CorrectionRecord]):
         "difference_ratio": record.difference_ratio,
         "box_index": getattr(record, "box_index", 0),
         "corrected_time": record.corrected_time.isoformat(),
+    }
+
+
+def added_box_to_dict(record: Optional[AddedBoxRecord]):
+    if record is None:
+        return None
+    return {
+        "id": record.id,
+        "image_id": record.image_id,
+        "box_index": record.box_index,
+        "bbox": {
+            "x": record.x,
+            "y": record.y,
+            "width": record.width,
+            "height": record.height,
+        },
+        "created_time": record.created_time.isoformat(),
     }
 
 
@@ -278,6 +313,74 @@ def compare(payload: CompareRequest, db: Session = Depends(get_db)):
     return {"success": True, "correction_id": correction_id, "box_index": payload.box_index, **result}
 
 
+@app.post("/api/added-boxes")
+def create_added_box(payload: AddedBoxCreateRequest, db: Session = Depends(get_db)):
+    image = db.get(ImageRecord, payload.image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="图片记录不存在")
+
+    added_box = AddedBoxRecord(
+        image_id=payload.image_id,
+        box_index=payload.box_index or 0,
+        x=round(payload.box.x, 2),
+        y=round(payload.box.y, 2),
+        width=round(payload.box.width, 2),
+        height=round(payload.box.height, 2),
+    )
+    db.add(added_box)
+    db.commit()
+    db.refresh(added_box)
+    return {"success": True, "added_box": added_box_to_dict(added_box)}
+
+
+@app.put("/api/added-boxes/{added_box_id}")
+def update_added_box(added_box_id: int, payload: AddedBoxUpdateRequest, db: Session = Depends(get_db)):
+    added_box = db.get(AddedBoxRecord, added_box_id)
+    if added_box is None:
+        raise HTTPException(status_code=404, detail="新增修正框不存在")
+
+    added_box.x = round(payload.box.x, 2)
+    added_box.y = round(payload.box.y, 2)
+    added_box.width = round(payload.box.width, 2)
+    added_box.height = round(payload.box.height, 2)
+    db.commit()
+    db.refresh(added_box)
+    return {"success": True, "added_box": added_box_to_dict(added_box)}
+
+
+@app.post("/api/deleted-boxes")
+def create_deleted_box(payload: DeleteBoxRequest, db: Session = Depends(get_db)):
+    image = db.get(ImageRecord, payload.image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="图片记录不存在")
+
+    detection = db.get(DetectionRecord, payload.detection_id)
+    if detection is None:
+        raise HTTPException(status_code=404, detail="检测记录不存在")
+
+    exists = (
+        db.query(DeletedBoxRecord)
+        .filter(
+            DeletedBoxRecord.image_id == payload.image_id,
+            DeletedBoxRecord.detection_id == payload.detection_id,
+            DeletedBoxRecord.box_index == payload.box_index,
+        )
+        .first()
+    )
+    if exists is not None:
+        return {"success": True, "deleted_box_id": exists.id, "box_index": payload.box_index}
+
+    deleted_box = DeletedBoxRecord(
+        image_id=payload.image_id,
+        detection_id=payload.detection_id,
+        box_index=payload.box_index,
+    )
+    db.add(deleted_box)
+    db.commit()
+    db.refresh(deleted_box)
+    return {"success": True, "deleted_box_id": deleted_box.id, "box_index": payload.box_index}
+
+
 @app.get("/api/records")
 def list_records(db: Session = Depends(get_db)):
     records = (
@@ -287,7 +390,31 @@ def list_records(db: Session = Depends(get_db)):
         .limit(50)
         .all()
     )
-    return {"success": True, "records": [image_to_dict(item) for item in records]}
+    record_ids = [item.id for item in records]
+    added_map = {}
+    deleted_map = {}
+    if record_ids:
+        added_items = (
+            db.query(AddedBoxRecord)
+            .filter(AddedBoxRecord.image_id.in_(record_ids))
+            .order_by(AddedBoxRecord.created_time.asc())
+            .all()
+        )
+        for item in added_items:
+            added_map.setdefault(item.image_id, []).append(item)
+
+        deleted_items = (
+            db.query(DeletedBoxRecord)
+            .filter(DeletedBoxRecord.image_id.in_(record_ids))
+            .all()
+        )
+        for item in deleted_items:
+            deleted_map.setdefault(item.image_id, set()).add(item.box_index)
+
+    return {
+        "success": True,
+        "records": [image_to_dict(item, added_map.get(item.id, []), deleted_map.get(item.id, set())) for item in records],
+    }
 
 
 @app.get("/api/records/{image_id}")
@@ -300,4 +427,14 @@ def get_record(image_id: int, db: Session = Depends(get_db)):
     )
     if record is None:
         raise HTTPException(status_code=404, detail="记录不存在")
-    return {"success": True, "record": image_to_dict(record)}
+    added_items = (
+        db.query(AddedBoxRecord)
+        .filter(AddedBoxRecord.image_id == image_id)
+        .order_by(AddedBoxRecord.created_time.asc())
+        .all()
+    )
+    deleted_indexes = {
+        item.box_index
+        for item in db.query(DeletedBoxRecord).filter(DeletedBoxRecord.image_id == image_id).all()
+    }
+    return {"success": True, "record": image_to_dict(record, added_items, deleted_indexes)}

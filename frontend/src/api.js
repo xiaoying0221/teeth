@@ -39,6 +39,67 @@ export async function compareBoxes(originalBox, editedBox, detectionId = null, b
   return response.json()
 }
 
+export async function createAddedBox(imageId, box, boxIndex = null) {
+  const payload = {
+    image_id: imageId,
+    box,
+  }
+  if (boxIndex != null) payload.box_index = boxIndex
+
+  const response = await fetch('/api/added-boxes', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    const message = await readErrorMessage(response)
+    throw new Error(message || '新增框保存失败')
+  }
+
+  return response.json()
+}
+
+export async function updateAddedBox(addedBoxId, box) {
+  const response = await fetch(`/api/added-boxes/${addedBoxId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ box }),
+  })
+
+  if (!response.ok) {
+    const message = await readErrorMessage(response)
+    throw new Error(message || '更新新增框失败')
+  }
+
+  return response.json()
+}
+
+export async function saveDeletedBox(imageId, detectionId, boxIndex) {
+  const response = await fetch('/api/deleted-boxes', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      image_id: imageId,
+      detection_id: detectionId,
+      box_index: boxIndex,
+    }),
+  })
+
+  if (!response.ok) {
+    const message = await readErrorMessage(response)
+    throw new Error(message || '删除模型框保存失败')
+  }
+
+  return response.json()
+}
+
 export async function fetchRecords() {
   const response = await fetch('/api/records')
 

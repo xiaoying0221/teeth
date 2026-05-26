@@ -374,6 +374,10 @@ input {
   background: rgba(47, 186, 166, 0.92);
 }
 
+.legend-added {
+  background: rgba(47, 143, 216, 0.92);
+}
+
 .canvas-stage {
   position: relative;
   width: 100%;
@@ -453,6 +457,20 @@ input {
 
 .box-edited.active {
   box-shadow: 0 0 0 3px rgba(47, 186, 166, 0.18);
+}
+
+.box-edited.box-added {
+  border-color: var(--primary);
+  background: rgba(47, 143, 216, 0.14);
+}
+
+.box-edited.box-added.active {
+  box-shadow: 0 0 0 3px rgba(47, 143, 216, 0.22);
+}
+
+.box-edited.box-added .resize-handle {
+  background: var(--primary);
+  box-shadow: 0 0 0 4px rgba(47, 143, 216, 0.15);
 }
 
 .box-label {
